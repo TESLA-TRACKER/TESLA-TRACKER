@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesla Delivery Station | Official Logistics</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <style>
+        body { font-family: 'Helvetica', sans-serif; margin: 0; background: #f4f4f4; color: #333; text-align: center; }
+        .header { background: #000; color: #E81922; padding: 30px; border-bottom: 4px solid #E81922; }
+        .container { max-width: 800px; margin: 40px auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .main-input { width: 70%; padding: 15px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }
+        .btn-tesla { background: #E81922; color: white; border: none; padding: 15px 30px; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        #map { height: 400px; width: 100%; border-radius: 8px; margin-top: 20px; display: none; }
+        .badge { background: #f39c12; color: white; padding: 8px 20px; border-radius: 20px; display: inline-block; font-weight: bold; margin-bottom: 20px; }
+        #adminPanel { display: none; text-align: left; background: #f9f9f9; padding: 25px; border: 1px dashed #cc0000; margin-top: 20px; }
+        label { font-weight: bold; display: block; margin-top: 10px; font-size: 12px; }
+        .admin-input { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1 style="letter-spacing: 4px; margin: 0;">TESLA DELIVERY STATION</h1>
+</div>
+
+<div class="container">
+    <div id="inputGroup">
+        <input type="text" id="userInput" class="main-input" placeholder="Enter ID or PIN">
+        <button class="btn-tesla" onclick="checkInput()">SUBMIT</button>
+    </div>
+
+    <div id="trackView" style="display:none;">
+        <div id="statLabel" class="badge">STATUS: ON HOLD</div>
+        <div style="text-align: left; background: #fff; padding: 15px; border-left: 4px solid #E81922;">
+            <p><strong>ID:</strong> TESLA-USA-2410-784632</p>
+            <p><strong>Location:</strong> <span id="locLabel">US Border</span></p>
+            <p><strong>To:</strong> <span id="destLabel">309 Martin Ct, Stanford, KY. 40484 USA</span></p>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <div id="adminPanel">
+        <h3 style="color: #E81922; margin: 0;">ADMINISTRATOR CONTROLS</h3>
+        <label>Update Status</label>
+        <select id="setStat" class="admin-input">
+            <option>On Hold</option><option>In Transit</option><option>Released</option>
+        </select>
+        <label>New Current Location (City, State)</label>
+        <input type="text" id="setLoc" class="admin-input" placeholder="e.g. Miami, FL">
+        <label>Update Delivery Destination</label>
+        <input type="text" id="setDest" class="admin-input" placeholder="Full Address">
+        <button class="btn-tesla" style="width: 100%; margin-top: 20px;" onclick="syncAll()">SAVE & SEND EMAIL</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // --- CONFIG AREA: FILL YOUR KEYS HERE ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyCqcCnOwS3cp1TUTWDoLMt2oO7K0xvzAn8",
+        databaseURL: "https://tesla-tracker-6368f-default-rtdb.firebaseio.com",
+        projectId: "tesla-tracker-6368f",
+        appId: "1:326067235594:web:4f40c099b00081279868f3"
+    };
+    const EMAILJS_PUBLIC_KEY = "UrPHj_HF0b2ATKUX2";
+    const EMAILJS_SERVICE_ID = "service_l9wppcc";
+    const EMAILJS_TEMPLATE_ID = "template_rttuylg";
+    // ---------------------------------------
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+
+    let map, marker;
+    const TRACK_ID = "TESLA-USA-2410-784632";
+    const ADMIN_PIN = "0530";
+
+    // Auto-update page when database changes
+    db.ref('shipment').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if(data) {
+            document.getElementById('statLabel').innerText = "STATUS: " + data.status.toUpperCase();
+            document.getElementById('locLabel').innerText = data.location ;
+            document.getElementById('destLabel').innerText = data.destination;
+            renderMap(data.lat, data.lon);
+        }
+    });
+
+    function checkInput() {
+        const val = document.getElementById('userInput').value.trim();
+        if(val === TRACK_ID) {
+            document.getElementById('trackView').style.display = 'block';
+            document.getElementById('adminPanel').style.display = 'none';
+        } else if(val === ADMIN_PIN) {
+            document.getElementById('adminPanel').style.display = 'block';
+            document.getElementById('trackView').style.display = 'none';
+        }
+    }
+
+    async function syncAll() {
+        const status = document.getElementById('setStat').value;
+        const location = document.getElementById('setLoc').value;            id: TRACK_ID, status, location, destination
+        }).then(() => {
+            alert("Database Updated & Email Sent!");
+            document.getElementById('userInput').value = TRACK_ID;
+            checkInput();
+        });
+    }
+
+    function renderMap(lat, lon) {
+        document.getElementById('map').style.display = 'block';
+        if (!map) {
+            map = L.map('map').setView([lat, lon], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            marker = L.marker([lat, lon], {icon: L.icon({iconUrl: 'https://cdn-icons-png.flaticon.com/512/744/744465.png', iconSize: [40, 40]})}).addTo(map);
+        } else {
+            marker.setLatLng([lat, lon]);
+            map.panTo([lat, lon]);
+        }
+    }
+</script>
+</body>
+</html>
